@@ -1,0 +1,16 @@
+[package]
+name = "trowl"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tower = {version = "0.4.13", features = ["default", "tokio"]}
+tokio = {version = "1.36.0", features = ["default", "rt-multi-thread", "rt", "macros"] }
+tokio-tower = "0.6.0"
+tokio-macros = "2.2.0"
+async-bincode = "0.7.2"
+futures-util = "0.3.30"
+serde = {version = "1.0.197", features = ["default", "derive"] }
+udp-stream = "0.0.11"
