@@ -6,11 +6,17 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tower = {version = "0.4.13", features = ["default", "tokio"]}
-tokio = {version = "1.36.0", features = ["default", "rt-multi-thread", "rt", "macros"] }
+tower = {version = "0.4.13", features = ["default", "tokio", "util"] }
+tokio = {version = "1.36.0", features = ["default", "rt-multi-thread", "rt", "macros", "net"] }
+tokio-util = {version = "0.7.10", features = ["net", "codec", "compat"]}
 tokio-tower = "0.6.0"
 tokio-macros = "2.2.0"
-async-bincode = "0.7.2"
-futures-util = "0.3.30"
+bincode = "2.0.0-rc.3"
+# async-bincode = "0.7.2"
 serde = {version = "1.0.197", features = ["default", "derive"] }
-udp-stream = "0.0.11"
+# udp-stream = "0.0.11"
+pin-project = "1.1.5"
+
+futures = "0.3.30"
+futures-util = "0.3.30"
+futures-sink = "0.3.30"
