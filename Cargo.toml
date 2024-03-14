@@ -11,12 +11,20 @@ tokio = {version = "1.36.0", features = ["default", "rt-multi-thread", "rt", "ma
 tokio-util = {version = "0.7.10", features = ["net", "codec", "compat"]}
 tokio-tower = "0.6.0"
 tokio-macros = "2.2.0"
+tokio-openssl = "0.6.4"
+openssl = "0.10.64"
 bincode = "2.0.0-rc.3"
 # async-bincode = "0.7.2"
 serde = {version = "1.0.197", features = ["default", "derive"] }
 # udp-stream = "0.0.11"
 pin-project = "1.1.5"
+base64 = "0.22.0"
 
 futures = "0.3.30"
 futures-util = "0.3.30"
 futures-sink = "0.3.30"
+webrtc-dtls = "0.9.0"
+webrtc-util = "0.8.1"
+bytes = "1.5.0"
+env_logger = "0.11.3"
+chrono = "0.4.35"
