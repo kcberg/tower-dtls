@@ -3,10 +3,11 @@ use std::io::ErrorKind;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use bincode::{Decode, Encode};
 use bincode::config::Configuration;
+use bincode::{Decode, Encode};
 use bytes::BufMut;
 use futures::Stream;
 use futures_sink::Sink;
@@ -15,8 +16,8 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder};
 use webrtc_dtls::conn::DTLSConn;
-use webrtc_util::Conn;
 use webrtc_util::conn::Listener;
+use webrtc_util::Conn;
 
 pub(crate) type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -28,26 +29,30 @@ pub struct DtlsConnStream {
 }
 
 impl DtlsConnStream {
-    pub fn new_client(dtls_conn: DTLSConn) -> Self {
+    pub fn new_client(dtls_conn: Arc<DTLSConn>, l_addr: SocketAddr) -> Self {
         let (tx1, rx1) = mpsc::unbounded_channel();
         let (tx2, mut rx2) = mpsc::unbounded_channel::<(Vec<u8>, SocketAddr)>();
 
         let tx = tx1.clone();
-        let l_addr = dtls_conn.local_addr().unwrap();
+        let dc2 = dtls_conn.clone();
+        tokio::spawn(async move {
+            loop {
+                match rx2.recv().await {
+                    None => {}
+                    Some(x) => {
+                        let _ = dc2.send(x.0.as_slice()).await.unwrap();
+                    }
+                }
+            }
+        });
 
         tokio::spawn(async move {
             loop {
                 let l_addr = l_addr.clone();
-                match rx2.recv().await {
-                    None => {}
-                    Some((d, _)) => {
-                        dtls_conn.send(d.as_slice()).await.unwrap();
-                    }
-                }
                 let tx = tx.clone();
                 let mut buf = BytesMut::zeroed(1500);
-                let s = dtls_conn.recv(&mut buf).await.unwrap();
-                tx.send(Ok((buf[0..s].to_vec(), l_addr))).unwrap()
+                let s = dtls_conn.clone().recv(&mut buf).await.unwrap();
+                tx.send(Ok((buf[0..s].to_vec(), l_addr))).unwrap();
             }
         });
 

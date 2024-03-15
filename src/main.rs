@@ -52,7 +52,6 @@ async fn main() {
 }
 
 pub async fn run_udps_server(bind_addr: String) {
-
     let bincode_conf = bincode::config::standard();
 
     let mut dtls_conf = Config {
@@ -67,9 +66,9 @@ pub async fn run_udps_server(bind_addr: String) {
     let dtls_listener = webrtc_dtls::listener::listen(bind_addr, dtls_conf)
         .await
         .unwrap();
-
     let str_codec =
         UdpPayloadEncoderDecoder::<UdpPayload<String, String>>::new(bincode_conf.clone());
+
     let dtls_stream = DtlsConnStream::new_server(Box::new(dtls_listener));
     let cs = CodecStream::new(str_codec, dtls_stream);
 
@@ -109,13 +108,15 @@ pub async fn run_udps_client(addr: String) {
 
     let dtls_conn = DTLSConn::new(c_sock, dtls_conf, true, None).await.unwrap();
     let l_addr = dtls_conn.local_addr().unwrap().clone();
-    let dtls_stream = DtlsConnStream::new_client(dtls_conn);
+
+    let dtls_stream = DtlsConnStream::new_client(Arc::new(dtls_conn), l_addr);
+
     let cs = CodecStream::new(str_codec, dtls_stream);
 
     let client = Client::<_, tokio_tower::Error<_, _>, _>::new(cs);
     let mut client = ServiceBuilder::new().service(client);
 
-    for i in 0..100 {
+    for i in 0..1000 {
         poll_fn(|cx| client.poll_ready(cx)).await.unwrap();
         let data = format!("hello {}", i);
 
@@ -130,7 +131,7 @@ pub async fn run_udps_client(addr: String) {
             }
             _ => {}
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
     println!("cool")
