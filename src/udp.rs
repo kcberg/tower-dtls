@@ -261,133 +261,12 @@ where
         pin.stream.poll_close_unpin(cx)
     }
 }
-/*
-pub struct UdpPayLoadService<S, IN, OUT> {
-    inner: S,
-    req: PhantomData<IN>,
-    resp: PhantomData<OUT>,
-    clients: Arc<Mutex<HashMap<SocketAddr, String>>>,
-}
 
-impl<S, IN, OUT> Service<(UdpPayload<IN, OUT>, SocketAddr)> for UdpPayLoadService<S, IN, OUT>
-where
-    S: Service<IN, Response = OUT, Error = StdError, Future = Ready<Result<OUT, StdError>>> + Send,
-    IN: Send + 'static,
-    OUT: Send + 'static,
-{
-    type Response = (UdpPayload<IN, OUT>, SocketAddr);
-    type Error = StdError;
-    type Future = Pin<
-        Box<
-            dyn Future<Output = Result<(UdpPayload<IN, OUT>, SocketAddr), StdError>>
-                + Send
-                + 'static,
-        >,
-    >;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: (UdpPayload<IN, OUT>, SocketAddr)) -> Self::Future {
-        let addr = req.1;
-        let req = req.0;
-        let re_opt = match req {
-            UdpPayload::Request(r) => Some(r),
-            UdpPayload::Response(_) => None,
-        };
-
-        match re_opt {
-            Some(resp) => {
-                let resp_c = self.inner.call(resp);
-                let f = async move {
-                    let resp = resp_c.await.unwrap();
-                    println!("called inner service");
-                    Ok((UdpPayload::Response(resp), addr))
-                };
-                Box::pin(f)
-            }
-            None => {
-                let err = std::io::Error::new(ErrorKind::Unsupported, "not a request".to_string());
-                let err_f =
-                    futures_util::future::err::<_, StdError>(StdError::try_from(err).unwrap());
-                Box::pin(err_f)
-            }
-        }
-    }
-}
-
-pub struct UdpPayLoadLayer<IN, OUT> {
-    req: PhantomData<IN>,
-    resp: PhantomData<OUT>,
-}
-
-impl<IN, OUT> UdpPayLoadLayer<IN, OUT> {
-    pub fn new() -> Self {
-        Self {
-            req: Default::default(),
-            resp: Default::default(),
-        }
-    }
-}
-
-impl<S, IN, OUT> Layer<S> for UdpPayLoadLayer<IN, OUT> {
-    type Service = UdpPayLoadService<S, IN, OUT>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        UdpPayLoadService {
-            inner,
-            req: Default::default(),
-            resp: Default::default(),
-            clients: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-}
-*/
 #[derive(Decode, Encode, Clone)]
 pub enum UdpPayload<Request, Response> {
     Request(Request),
     Response(Response),
 }
-
-/*pub trait Crypt {
-    fn decrypt(buf: &mut BytesMut);
-    fn encrypt(buf: &mut BytesMut);
-}
-
-pub struct Noopryptor;
-
-impl Crypt for Noopryptor {
-    fn decrypt(buf: &mut BytesMut) {}
-
-    fn encrypt(buf: &mut BytesMut) {}
-}*/
-/*
-pub struct Base64Cryptor;
-
-impl Base64Cryptor {
-    pub fn new() -> Self {
-        Base64Cryptor {}
-    }
-}
-
-impl Crypt for Base64Cryptor {
-    fn decrypt(buf: &mut BytesMut) {
-        let ret = BASE64_STANDARD
-            .decode(buf.clone())
-            .unwrap()
-            .as_slice()
-            .to_vec();
-        buf.clear();
-        buf.extend(ret);
-    }
-
-    fn encrypt(buf: &mut BytesMut) {
-        let ret = BASE64_STANDARD.encode(buf.clone()).as_bytes().to_vec();
-        buf.clear();
-        buf.extend(ret);
-    }
-}*/
 
 pub struct UdpPayloadEncoderDecoder<T: Decode + Encode> {
     conf: Configuration,
@@ -426,8 +305,8 @@ fn decode<T: Decode>(conf: Configuration, buf: &mut BytesMut) -> Result<Option<T
         return Ok(None);
     }
     let ret = match bincode::decode_from_slice(&buf, conf) {
-        Err(e) => {
-            println!("decode err: {}", e);
+        Err(_e) => {
+            // println!("decode err: {}", e);
             None
         }
         Ok((r, _)) => {
@@ -448,64 +327,3 @@ fn encode<T: Encode>(conf: Configuration, item: T, dst: &mut BytesMut) -> Result
         }
     }
 }
-
-/*
-pub struct StreamWrapper<S, T, I> {
-    stream: S,
-    marker1: PhantomData<T>,
-    marker2: PhantomData<I>,
-}
-
-impl<S, T, I> StreamWrapper<S, T, I>
-where
-    S: Stream<Item = T> + Sink<I> + Unpin,
-    T: Unpin,
-{
-    pub fn new(stream: S) -> Self {
-        StreamWrapper {
-            stream,
-            marker1: Default::default(),
-            marker2: Default::default(),
-        }
-    }
-}
-
-impl<S, T, I> Stream for StreamWrapper<S, T, I>
-where
-    S: Stream<Item = T> + Sink<I> + Unpin,
-    T: Unpin,
-    I: Unpin,
-{
-    type Item = T;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let pin = pin!(&mut self.get_mut().stream);
-        pin.poll_next(cx)
-    }
-}
-
-impl<S, T: Unpin, I> Sink<I> for StreamWrapper<S, T, I>
-where
-    S: Stream<Item = T> + Sink<I, Error = StdError> + Unpin,
-    I: Unpin,
-{
-    type Error = StdError;
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.get_mut().stream).poll_ready(cx)
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: I) -> Result<(), Self::Error> {
-        let pin = Pin::new(&mut self.get_mut().stream);
-        pin.start_send(item)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.get_mut().stream).poll_close(cx)
-    }
-}
-*/
