@@ -24,7 +24,7 @@ use webrtc_dtls::conn::DTLSConn;
 use webrtc_util::conn::Listener;
 use webrtc_util::Conn;
 
-pub(crate) type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
+pub type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 type DtlsListener = dyn Listener + Send + Sync;
 
@@ -275,8 +275,8 @@ impl<C> CodecStream<C> {
 }
 
 impl<C> Stream for CodecStream<C>
-where
-    C: Decoder + Unpin,
+    where
+        C: Decoder + Unpin,
 {
     type Item = Result<(C::Item, SocketAddr), StdError>;
 
@@ -300,8 +300,8 @@ where
 }
 
 impl<I, C> Sink<(I, SocketAddr)> for CodecStream<C>
-where
-    C: Encoder<I> + Unpin,
+    where
+        C: Encoder<I> + Unpin,
 {
     type Error = StdError;
 
@@ -409,15 +409,15 @@ impl<S, IN, OUT> RequestHandlerService<S, IN, OUT> {
 }
 
 impl<S, IN, OUT> Service<(UdpPayload<IN, OUT>, SocketAddr)> for RequestHandlerService<S, IN, OUT>
-where
-    S: Service<IN, Response = OUT, Error = StdError, Future = Ready<Result<OUT, StdError>>> + Send,
-    IN: Send + 'static,
-    OUT: Send + 'static,
+    where
+        S: Service<IN, Response = OUT, Error = StdError, Future = Ready<Result<OUT, StdError>>> + Send,
+        IN: Send + 'static,
+        OUT: Send + 'static,
 {
     type Response = (UdpPayload<IN, OUT>, SocketAddr);
     type Error = S::Error;
     type Future =
-        Pin<Box<dyn Future<Output = Result<(UdpPayload<IN, OUT>, SocketAddr), StdError>>>>;
+    Pin<Box<dyn Future<Output = Result<(UdpPayload<IN, OUT>, SocketAddr), StdError>>>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -461,10 +461,10 @@ impl<S, T> DtlsClient<S, T> {
 }
 
 impl<S, T> DtlsClient<S, T>
-where
-    T: Encode + Decode + Unpin,
-    S: Sink<(T, SocketAddr), Error = StdError> + Unpin,
-    S: Stream<Item = Result<(T, SocketAddr), StdError>>,
+    where
+        T: Encode + Decode + Unpin,
+        S: Sink<(T, SocketAddr), Error = StdError> + Unpin,
+        S: Stream<Item = Result<(T, SocketAddr), StdError>>,
 {
     pub async fn send_recv(&mut self, req: T) -> Result<T, StdError> {
         self.stream.send((req, self.addr.clone())).await.unwrap();
@@ -479,8 +479,9 @@ where
             },
             Poll::Pending => Poll::Pending,
         })
-        .await
-        .unwrap();
+            .await
+            .unwrap();
         Ok(d.0)
     }
 }
+

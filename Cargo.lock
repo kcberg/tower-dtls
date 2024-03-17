@@ -1653,6 +1653,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "tower-dtls"
+version = "0.1.0"
+dependencies = [
+ "bincode 2.0.0-rc.3",
+ "bytes",
+ "chrono",
+ "env_logger",
+ "futures",
+ "futures-sink",
+ "futures-util",
+ "log",
+ "pin-project",
+ "tokio",
+ "tokio-macros",
+ "tokio-tower",
+ "tokio-util",
+ "tower",
+ "webrtc-dtls",
+ "webrtc-util",
+]
+
+[[package]]
 name = "tower-layer"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1694,28 +1716,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 dependencies = [
  "once_cell",
-]
-
-[[package]]
-name = "trowl"
-version = "0.1.0"
-dependencies = [
- "bincode 2.0.0-rc.3",
- "bytes",
- "chrono",
- "env_logger",
- "futures",
- "futures-sink",
- "futures-util",
- "log",
- "pin-project",
- "tokio",
- "tokio-macros",
- "tokio-tower",
- "tokio-util",
- "tower",
- "webrtc-dtls",
- "webrtc-util",
 ]
 
 [[package]]
