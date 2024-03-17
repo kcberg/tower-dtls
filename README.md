@@ -23,6 +23,7 @@ cargo run --example client 127.0.0.1:9999
 ```
 
 ### TODO's
+1. Add `DtlsServer` wrapper around tokio-tower or perhaps make one 🤔
 1. Documentation
-2. Publish to crates.io
-3. Add an HTTP/3 example
+1. Publish to crates.io
+1. Add an HTTP/3 example
