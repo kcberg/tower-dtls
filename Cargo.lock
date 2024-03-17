@@ -1707,6 +1707,7 @@ dependencies = [
  "futures",
  "futures-sink",
  "futures-util",
+ "log",
  "pin-project",
  "tokio",
  "tokio-macros",
