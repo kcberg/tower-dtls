@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use std::process::exit;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::net::UdpSocket;
 use tower::ServiceBuilder;
@@ -77,14 +78,8 @@ pub async fn run_udps_client(addr: String) {
 
     for i in 0..1000 {
         let msg = format!("howdy {}", i);
-        let d = client.send_recv(UdpPayload::Request(msg)).await.unwrap();
-
-        log::info!("blah");
-
-        let data = match d {
-            UdpPayload::Request(_) => "".to_string(),
-            UdpPayload::Response(d) => d,
-        };
+        let data = client.send_recv(msg).await.unwrap();
         log::info!("server resp[{}]: {}", l_addr, data);
+        tokio::time::sleep(Duration::from_millis(1500)).await;
     }
 }

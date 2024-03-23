@@ -29,8 +29,8 @@ pub type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 type DtlsListener = dyn Listener + Send + Sync;
 
 pub struct DtlsConnStream {
-    rx1: mpsc::UnboundedReceiver<Result<(Vec<u8>, SocketAddr), StdError>>,
-    tx2: mpsc::UnboundedSender<(Vec<u8>, SocketAddr)>,
+    rx1: mpsc::UnboundedReceiver<Result<UdpPacket<Vec<u8>>, StdError>>,
+    tx2: mpsc::UnboundedSender<UdpPacket<Vec<u8>>>,
 }
 
 const BUF_SIZE: usize = 64 * 1_024;
@@ -38,7 +38,7 @@ const BUF_SIZE: usize = 64 * 1_024;
 impl DtlsConnStream {
     pub fn new_client(dtls_conn: Arc<DTLSConn>, l_addr: SocketAddr) -> Self {
         let (tx1, rx1) = mpsc::unbounded_channel();
-        let (tx2, mut rx2) = mpsc::unbounded_channel::<(Vec<u8>, SocketAddr)>();
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<UdpPacket<Vec<u8>>>();
         let (ktx, mut krx) = mpsc::unbounded_channel();
 
         let tx = tx1.clone();
@@ -53,7 +53,7 @@ impl DtlsConnStream {
                 match r {
                     None => {}
                     Some(x) => {
-                        let _ = match dc2.send(x.0.as_slice()).await {
+                        let _ = match dc2.send(x.payload.as_slice()).await {
                             Ok(_) => {}
                             Err(e) => {
                                 log::error!("client_send: {}", e);
@@ -74,7 +74,7 @@ impl DtlsConnStream {
 
                 let timeout = Duration::from_millis(3_000);
                 match dtls_conn.clone().read(&mut buf, Some(timeout)).await {
-                    Ok(s) => match tx.send(Ok((buf[0..s].to_vec(), l_addr))) {
+                    Ok(s) => match tx.send(Ok(UdpPacket::new(l_addr, buf[0..s].to_vec()))) {
                         Ok(_) => {}
                         Err(e) => {
                             log::error!("client_read: {}", e);
@@ -99,7 +99,7 @@ impl DtlsConnStream {
 
     pub fn new_server(listener: Box<DtlsListener>) -> Self {
         let (tx1, rx1) = mpsc::unbounded_channel();
-        let (tx2, rx2) = mpsc::unbounded_channel::<(Vec<u8>, SocketAddr)>();
+        let (tx2, rx2) = mpsc::unbounded_channel::<UdpPacket<Vec<u8>>>();
 
         let router = ClientConnRouter::new(rx2);
 
@@ -122,7 +122,7 @@ impl DtlsConnStream {
                         };
 
                         match r {
-                            Ok(s) => match tx.send(Ok((buf[0..s].to_vec(), addr))) {
+                            Ok(s) => match tx.send(Ok(UdpPacket::new(addr, buf[0..s].to_vec()))) {
                                 Ok(_) => {}
                                 Err(e) => log::error!("server_read[{}]: {}", addr, e),
                             },
@@ -147,7 +147,7 @@ impl DtlsConnStream {
 
                         match r {
                             Some(d) => {
-                                t_conn.send(d.0.as_slice()).await.unwrap();
+                                t_conn.send(d.payload.as_slice()).await.unwrap();
                             }
                             None => {}
                         }
@@ -167,9 +167,9 @@ struct ClientConnRouter {
 }
 
 impl ClientConnRouter {
-    fn new(mut rx2: mpsc::UnboundedReceiver<(Vec<u8>, SocketAddr)>) -> Self {
+    fn new(mut rx2: mpsc::UnboundedReceiver<UdpPacket<Vec<u8>>>) -> Self {
         let (rtx, mut rrx) = mpsc::unbounded_channel::<ClientConnsMsg>();
-        let mut conns: HashMap<SocketAddr, mpsc::UnboundedSender<(Vec<u8>, SocketAddr)>> =
+        let mut conns: HashMap<SocketAddr, mpsc::UnboundedSender<UdpPacket<Vec<u8>>>> =
             HashMap::new();
 
         tokio::spawn(async move {
@@ -199,7 +199,7 @@ impl ClientConnRouter {
                 let rtx2 = rtx2.clone();
                 tokio::spawn(async move {
                     let (otx, orx) = oneshot::channel();
-                    rtx2.send(ClientConnsMsg::Get(pkt.1, otx)).unwrap();
+                    rtx2.send(ClientConnsMsg::Get(pkt.addr, otx)).unwrap();
                     let stx = orx.await.unwrap();
                     stx.send(pkt).unwrap();
                 });
@@ -209,7 +209,7 @@ impl ClientConnRouter {
         Self { ttx: rtx }
     }
 
-    fn insert(&self, addr: SocketAddr, tx: mpsc::UnboundedSender<(Vec<u8>, SocketAddr)>) {
+    fn insert(&self, addr: SocketAddr, tx: mpsc::UnboundedSender<UdpPacket<Vec<u8>>>) {
         self.ttx.send(ClientConnsMsg::Insert(addr, tx)).unwrap()
     }
 
@@ -219,16 +219,16 @@ impl ClientConnRouter {
 }
 
 enum ClientConnsMsg {
-    Insert(SocketAddr, mpsc::UnboundedSender<(Vec<u8>, SocketAddr)>),
+    Insert(SocketAddr, mpsc::UnboundedSender<UdpPacket<Vec<u8>>>),
     Get(
         SocketAddr,
-        oneshot::Sender<mpsc::UnboundedSender<(Vec<u8>, SocketAddr)>>,
+        oneshot::Sender<mpsc::UnboundedSender<UdpPacket<Vec<u8>>>>,
     ),
     Remove(SocketAddr),
 }
 
 impl Stream for DtlsConnStream {
-    type Item = Result<(Vec<u8>, SocketAddr), StdError>;
+    type Item = Result<UdpPacket<Vec<u8>>, StdError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let pin = &mut self.get_mut();
@@ -242,14 +242,14 @@ impl Stream for DtlsConnStream {
     }
 }
 
-impl Sink<(Vec<u8>, SocketAddr)> for DtlsConnStream {
+impl Sink<UdpPacket<Vec<u8>>> for DtlsConnStream {
     type Error = StdError;
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(self: Pin<&mut Self>, item: (Vec<u8>, SocketAddr)) -> Result<(), Self::Error> {
+    fn start_send(self: Pin<&mut Self>, item: UdpPacket<Vec<u8>>) -> Result<(), Self::Error> {
         let x = self.tx2.send(item).unwrap();
         Ok(x)
     }
@@ -275,21 +275,21 @@ impl<C> CodecStream<C> {
 }
 
 impl<C> Stream for CodecStream<C>
-    where
-        C: Decoder + Unpin,
+where
+    C: Decoder + Unpin,
 {
-    type Item = Result<(C::Item, SocketAddr), StdError>;
+    type Item = Result<UdpPacket<C::Item>, StdError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let pin = self.get_mut();
 
         let poll = pin.stream.poll_next_unpin(cx);
-        if let Poll::Ready(Some(Ok((d, a)))) = poll {
+        if let Poll::Ready(Some(Ok(pkt))) = poll {
             let mut buf = BytesMut::new();
-            buf.put(d.as_slice());
+            buf.put(pkt.payload.as_slice());
 
             if let Ok(Some(frame)) = pin.codec.decode_eof(&mut buf) {
-                Poll::Ready(Some(Ok((frame, a))))
+                Poll::Ready(Some(Ok(UdpPacket::new(pkt.addr, frame))))
             } else {
                 Poll::Ready(None)
             }
@@ -299,9 +299,9 @@ impl<C> Stream for CodecStream<C>
     }
 }
 
-impl<I, C> Sink<(I, SocketAddr)> for CodecStream<C>
-    where
-        C: Encoder<I> + Unpin,
+impl<I, C> Sink<UdpPacket<I>> for CodecStream<C>
+where
+    C: Encoder<I> + Unpin,
 {
     type Error = StdError;
 
@@ -310,11 +310,12 @@ impl<I, C> Sink<(I, SocketAddr)> for CodecStream<C>
         pin.stream.poll_ready_unpin(cx)
     }
 
-    fn start_send(self: Pin<&mut Self>, item: (I, SocketAddr)) -> Result<(), Self::Error> {
+    fn start_send(self: Pin<&mut Self>, item: UdpPacket<I>) -> Result<(), Self::Error> {
         let pin = self.get_mut();
         let mut buf = BytesMut::new();
-        if let Ok(_) = pin.codec.encode(item.0, &mut buf) {
-            pin.stream.start_send_unpin((buf.to_vec(), item.1))
+        if let Ok(_) = pin.codec.encode(item.payload, &mut buf) {
+            pin.stream
+                .start_send_unpin(UdpPacket::new(item.addr, buf.to_vec()))
         } else {
             Err(
                 StdError::try_from(std::io::Error::new(ErrorKind::Other, "start send error"))
@@ -331,6 +332,18 @@ impl<I, C> Sink<(I, SocketAddr)> for CodecStream<C>
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let pin = self.get_mut();
         pin.stream.poll_close_unpin(cx)
+    }
+}
+
+#[derive(Decode, Encode, Clone)]
+pub struct UdpPacket<T> {
+    addr: SocketAddr,
+    payload: T,
+}
+
+impl<T> UdpPacket<T> {
+    pub fn new(addr: SocketAddr, payload: T) -> Self {
+        UdpPacket { addr, payload }
     }
 }
 
@@ -408,31 +421,30 @@ impl<S, IN, OUT> RequestHandlerService<S, IN, OUT> {
     }
 }
 
-impl<S, IN, OUT> Service<(UdpPayload<IN, OUT>, SocketAddr)> for RequestHandlerService<S, IN, OUT>
-    where
-        S: Service<IN, Response = OUT, Error = StdError, Future = Ready<Result<OUT, StdError>>> + Send,
-        IN: Send + 'static,
-        OUT: Send + 'static,
+impl<S, IN, OUT> Service<UdpPacket<UdpPayload<IN, OUT>>> for RequestHandlerService<S, IN, OUT>
+where
+    S: Service<IN, Response = OUT, Error = StdError, Future = Ready<Result<OUT, StdError>>> + Send,
+    IN: Send + 'static,
+    OUT: Send + 'static,
 {
-    type Response = (UdpPayload<IN, OUT>, SocketAddr);
+    type Response = UdpPacket<UdpPayload<IN, OUT>>;
     type Error = S::Error;
-    type Future =
-    Pin<Box<dyn Future<Output = Result<(UdpPayload<IN, OUT>, SocketAddr), StdError>>>>;
+    type Future = Pin<Box<dyn Future<Output = Result<UdpPacket<UdpPayload<IN, OUT>>, StdError>>>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: (UdpPayload<IN, OUT>, SocketAddr)) -> Self::Future {
-        let p = req.0;
-        let addr = req.1.clone();
+    fn call(&mut self, req: UdpPacket<UdpPayload<IN, OUT>>) -> Self::Future {
+        let p = req.payload;
+        let addr = req.addr.clone();
 
         match p {
             UdpPayload::Request(ireq) => {
                 let inner_f = self.inner.call(ireq);
                 Box::pin(async move {
                     match inner_f.await {
-                        Ok(x) => Ok((UdpPayload::Response(x), addr)),
+                        Ok(x) => Ok(UdpPacket::new(addr, UdpPayload::Response(x))),
                         Err(e) => Err(e),
                     }
                 })
@@ -444,44 +456,55 @@ impl<S, IN, OUT> Service<(UdpPayload<IN, OUT>, SocketAddr)> for RequestHandlerSe
     }
 }
 
-pub struct DtlsClient<S, T> {
-    stream: S,
+pub struct DtlsClient<S, I, O> {
+    inner: S,
     addr: SocketAddr,
-    m: PhantomData<T>,
+    i: PhantomData<I>,
+    o: PhantomData<O>,
 }
 
-impl<S, T> DtlsClient<S, T> {
+impl<S, I, O> DtlsClient<S, I, O> {
     pub fn new(stream: S, addr: SocketAddr) -> Self {
         DtlsClient {
-            stream,
+            inner: stream,
             addr,
-            m: Default::default(),
+            i: Default::default(),
+            o: Default::default(),
         }
     }
 }
 
-impl<S, T> DtlsClient<S, T>
-    where
-        T: Encode + Decode + Unpin,
-        S: Sink<(T, SocketAddr), Error = StdError> + Unpin,
-        S: Stream<Item = Result<(T, SocketAddr), StdError>>,
+impl<S, I, O> DtlsClient<S, I, O>
+where
+    I: Encode + Decode + Unpin,
+    O: Encode + Decode + Unpin,
+    S: Sink<UdpPacket<UdpPayload<I, O>>, Error = StdError> + Unpin,
+    S: Stream<Item = Result<UdpPacket<UdpPayload<I, O>>, StdError>>,
 {
-    pub async fn send_recv(&mut self, req: T) -> Result<T, StdError> {
-        self.stream.send((req, self.addr.clone())).await.unwrap();
+    pub async fn send_recv(&mut self, req: I) -> Result<O, StdError> {
+        let p = UdpPayload::Request(req);
+        self.inner
+            .send(UdpPacket::new(self.addr.clone(), p))
+            .await
+            .unwrap();
 
-        let d = poll_fn(|cx| match self.stream.poll_next_unpin(cx) {
+        let d = poll_fn(|cx| match self.inner.poll_next_unpin(cx) {
             Poll::Ready(x) => match x {
                 None => Poll::Pending,
                 Some(r) => match r {
-                    Ok(r) => Poll::Ready(Ok(r)),
+                    Ok(r) => match r.payload {
+                        UdpPayload::Request(_) => {
+                            Poll::Ready(Err(io::Error::new(ErrorKind::Other, "expected response")))
+                        }
+                        UdpPayload::Response(resp) => Poll::Ready(Ok(resp)),
+                    },
                     Err(e) => Poll::Ready(Err(io::Error::new(ErrorKind::Other, e))),
                 },
             },
             Poll::Pending => Poll::Pending,
         })
-            .await
-            .unwrap();
-        Ok(d.0)
+        .await
+        .unwrap();
+        Ok(d)
     }
 }
-
